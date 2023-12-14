@@ -1,29 +1,14 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
-const { createClient } = require("@sanity/client");
-const createSlug = require("./createSlug");
 const extractUsernameAndPlatform = require("./extractUsernameAndPlatform");
 const findPeriodicidadAndDay = require("./findPeriodicidadAndDay");
+const { createSlug, sleep, isValidImageURL } = require("./utils");
+const sanityClient = require("./sanityClient");
 
-function isValidImageURL(url) {
-  const imageExtensionsRegex = /\.(jpg|jpeg|svg|png|gif|tiff)/i;
-  return imageExtensionsRegex.test(url);
-}
-
-const client = createClient({
-  projectId: "projectId",
-  dataset: "production",
-  token:
-    "token", // we need this to get write access
-  useCdn: false, // We can't use the CDN for writing
-  apiVersion: "2021-08-31",
-});
-
-const sleep = (ms = 20000) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const fetchProgramas = async () => {
-  const url = "https://radionopal.com/";
-  // const url = "https://radionopal.com/archivo/";
+const fetchProgramas = async (esArchivo) => {
+  const url = esArchivo
+    ? "https://radionopal.com/archivo/"
+    : "https://radionopal.com/";
   const response = await axios.get(url);
 
   const html = response.data;
@@ -38,14 +23,14 @@ const fetchProgramas = async () => {
     linksDetallesDePrograma.push({ link, imagenPrograma });
   });
 
-  let transaction = client.transaction();
+  let transaction = sanityClient.transaction();
 
   const slugsPersonas = [];
   // cada programa
   try {
     for (const { link, imagenPrograma } of linksDetallesDePrograma.slice(
       0,
-      100,
+      300,
     )) {
       const detallePrograma = await axios.get(link);
       await sleep();
@@ -80,7 +65,10 @@ const fetchProgramas = async () => {
 
             const buffer = Buffer.from(bufferResponse.data, "utf-8");
 
-            const imageAsset = await client.assets.upload("image", buffer);
+            const imageAsset = await sanityClient.assets.upload(
+              "image",
+              buffer,
+            );
 
             fotos = [
               {
@@ -97,7 +85,7 @@ const fetchProgramas = async () => {
               },
             ];
           } catch (e) {
-            console.log(e);
+            console.error(e);
           }
         }
 
@@ -140,7 +128,7 @@ const fetchProgramas = async () => {
 
       const titulo = $(".titulo-programa h1").text();
 
-      console.log("----" + titulo + "----" + new Date().toLocaleString());
+      console.info("----" + titulo + "----" + new Date().toLocaleString());
 
       const slug = createSlug(titulo);
       const fechasLegacy = $("p.fechas").text();
@@ -152,27 +140,31 @@ const fetchProgramas = async () => {
       let imagenes;
       console.log(imagenPrograma);
       if (imagenPrograma && isValidImageURL(imagenPrograma)) {
-        const bufferResponse = await axios.get(imagenPrograma, {
-          responseType: "arraybuffer",
-        });
-        await sleep();
-        const buffer = Buffer.from(bufferResponse.data, "utf-8");
+        try {
+          const bufferResponse = await axios.get(imagenPrograma, {
+            responseType: "arraybuffer",
+          });
+          await sleep();
+          const buffer = Buffer.from(bufferResponse.data, "utf-8");
 
-        const imageAsset = await client.assets.upload("image", buffer);
-        imagenes = [
-          {
-            _key: `${slug}-imagen-programa-key`,
-            _type: "imagen",
-            alt: titulo,
-            imagen: {
-              _type: "image",
-              asset: {
-                _type: "reference",
-                _ref: imageAsset._id,
+          const imageAsset = await sanityClient.assets.upload("image", buffer);
+          imagenes = [
+            {
+              _key: `${slug}-imagen-programa-key`,
+              _type: "imagen",
+              alt: titulo,
+              imagen: {
+                _type: "image",
+                asset: {
+                  _type: "reference",
+                  _ref: imageAsset._id,
+                },
               },
             },
-          },
-        ];
+          ];
+        } catch (error) {
+          console.error("Error fetching image:", error);
+        }
       }
       const mixcloudIframeLinks = [];
       // cada link de mixcloud
@@ -217,22 +209,22 @@ const fetchProgramas = async () => {
 
         locutorxs,
 
-        archivado: false,
+        archivado: esArchivo,
       };
 
       transaction.createOrReplace(dataPrograma);
       await sleep();
-      console.log(
+      console.info(
         "--termina--" + titulo + "----" + new Date().toLocaleString(),
       );
     }
   } catch (e) {
-    console.log(e);
+    console.warn(e);
   }
   const commitResponse = await transaction.commit();
-  console.log(commitResponse);
-  console.log("☻ ☻ ☻ termina ☻ ☻ ☻");
+  console.info(commitResponse);
+  console.info("☻ ☻ ☻ termina ☻ ☻ ☻");
   return;
 };
 
-fetchProgramas();
+fetchProgramas(false);

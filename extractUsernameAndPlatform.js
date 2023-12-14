@@ -1,4 +1,4 @@
-const createSlug = require("./createSlug");
+const {createSlug} = require("./utils");
 
 const usernameRegex =
   /(?:https?:\/\/)?(?:www\.)?(instagram|twitter)\.com\/([a-zA-Z0-9_]+)\/?/;

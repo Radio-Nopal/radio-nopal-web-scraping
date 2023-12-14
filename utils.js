@@ -8,4 +8,11 @@ function createSlug(str) {
   return str;
 }
 
-module.exports = createSlug;
+const sleep = (ms = 20000) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isValidImageURL(url) {
+  const imageExtensionsRegex = /\.(jpg|jpeg|svg|png|gif|tiff)/i;
+  return imageExtensionsRegex.test(url);
+}
+
+module.exports = { createSlug, sleep, isValidImageURL };
